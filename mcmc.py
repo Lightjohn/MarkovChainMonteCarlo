@@ -3,6 +3,7 @@ import string
 
 import matplotlib.pyplot as plt
 import numpy as np
+from numpy import exp, log
 
 from Ciphers.CaesarCipher import CaesarCipher
 from preprocessing import extract_words
@@ -84,23 +85,33 @@ def make_first_proposition(crypt_phrase, global_stats, _char_to_num):
     return first_estimation
 
 
+def apply_permutation(code: dict, _size):
+    code_copy = code.copy()
+    rand_i = list_val[np.random.randint(0, _size)]
+    rand_j = list_val[np.random.randint(0, _size)]
+
+    code_copy[rand_i], code_copy[rand_j] = code_copy[rand_j], code_copy[rand_i]
+    return code_copy
+
+
 if __name__ == '__main__':
     # Creating stats on input text
-    input_file = "MiserablesV1.txt"
-    # input_file = "Swann.txt"
+    # input_file = "MiserablesV1.txt"
+    input_file = "Swann.txt"
     chars = {}
     use_digits = False
     char_to_num = create_indirection_table(include_digits=use_digits)
     stats = {i: 0 for i in char_to_num}
-    size = len(char_to_num)
-    bigrams = np.zeros((size, size))
+    size_solution = len(char_to_num)
+    bigrams = np.zeros((size_solution, size_solution))
     for word in extract_words(os.path.join("data", input_file), include_digits=use_digits):
         compute_char_relation(word, bigrams, char_to_num)
         compute_stats(word, stats)
 
     # Normalising table
     # will be errors if no char are found in all text like "5" in original "Swann.txt"
-    bigrams = bigrams / bigrams.sum(axis=1)[:, None]
+    EPSILON = 1e-6  # Epsilon for when 0
+    bigrams = log(bigrams / bigrams.sum(axis=1)[:, None] + EPSILON)
 
     # Producing graph
     # save_table(bigrams, char_to_num, False)
@@ -112,40 +123,36 @@ if __name__ == '__main__':
     coded_phrase = caesar_cipher.crypt(original_phrase)
     input_probability = get_plausibility(original_phrase, bigrams, char_to_num)
 
-    decrypt_guess = make_first_proposition(coded_phrase, stats, char_to_num)
+    current_guess = make_first_proposition(coded_phrase, stats, char_to_num)
 
-    best_decoded = "".join([decrypt_guess[i] for i in coded_phrase])
+    best_decoded = "".join([current_guess[i] for i in coded_phrase])
     best_probability = get_plausibility(best_decoded, bigrams, char_to_num)
 
     print(f"INPUT:\n{input_probability:.3f} {original_phrase}")
-    print(f"DECODED: {coded_phrase}")
+    print(f"CODED: {coded_phrase}")
     print(f"{best_probability:.3f} {best_decoded}\n")
 
-    max_iter = 1000000
-    alpha = 2
+    max_iter = 200000
+    alpha = 1
 
     list_val = [i for i in char_to_num]
     count = 0
 
-    current_probability = 0
+    current_probability = best_probability
 
     while count < max_iter:
         # Switching decoding table
-        guess_tmp = decrypt_guess
-        rand_i = list_val[np.random.randint(0, size)]
-        rand_j = list_val[np.random.randint(0, size)]
-
-        guess_tmp[rand_i], guess_tmp[rand_j] = guess_tmp[rand_j], guess_tmp[rand_i]
+        guess_tmp = apply_permutation(current_guess, size_solution)
 
         decoded = "".join([guess_tmp[i] for i in coded_phrase])
         tmp_probability = get_plausibility(decoded, bigrams, char_to_num)
 
         # Test whether move should be accepted
         x = np.random.rand()
-        p = alpha * (tmp_probability - current_probability) * original_phrase_size
+        p = exp(alpha * (tmp_probability - current_probability) * original_phrase_size)
 
         if p > x:
-            decrypt_guess = guess_tmp.copy()
+            current_guess = guess_tmp.copy()
             current_probability = tmp_probability
             if tmp_probability > best_probability:
                 best_probability = tmp_probability
@@ -153,4 +160,5 @@ if __name__ == '__main__':
                 print(f"{tmp_probability:.3f} {decoded} {count}")
         count += 1
 
-    print(f"\n{best_probability:.3f} {best_decoded}")
+    print(f"\nORIG: {original_phrase}")
+    print(f"{best_probability:.3f} {best_decoded}")
