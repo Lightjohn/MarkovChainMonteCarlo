@@ -2,10 +2,11 @@ import string
 from collections import Counter
 
 
-class CaesarCypher:
+class CaesarCipher:
 
-    def __init__(self, key):
-        self.alphabet = " " + string.ascii_lowercase + string.digits
+    def __init__(self, key, include_digits=True):
+        digits = string.digits if include_digits else ""
+        self.alphabet = " " + string.ascii_lowercase + digits
         self.cryptor = {j: self.alphabet[(i + key) % len(self.alphabet)] for i, j in enumerate(self.alphabet)}
         self.decryptor = {j: i for i, j in self.cryptor.items()}
 
@@ -22,11 +23,11 @@ class CaesarCypher:
         key = self.alphabet.index(most_common[0]) - self.alphabet.index("e")
         # key = self.alphabet.index(most_common[0])
         print("INDEX (guessed)", key, "OR", key - len(self.alphabet))
-        return CaesarCypher(key).decrypt(string_input)
+        return CaesarCipher(key).decrypt(string_input)
 
 
 if __name__ == '__main__':
-    a = CaesarCypher(6)
+    a = CaesarCipher(6)
     # d = "You and I know what infatuation is You know all laws of infatuation and so do I"   # no e in phrase
     d = "Quoique ce detail ne touche en aucune maniere au fond meme de ce que je vais vous parler"
     d = d.lower()

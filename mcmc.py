@@ -4,6 +4,7 @@ import string
 import matplotlib.pyplot as plt
 import numpy as np
 
+from Ciphers.CaesarCipher import CaesarCipher
 from preprocessing import extract_words
 
 
@@ -20,8 +21,10 @@ def compute_char_relation(_word: str, result_table, indirection_table: dict):
     _update_table(_word[-1], " ", result_table, indirection_table)
 
 
-def create_indirection_table():
-    data = [i for i in " " + string.ascii_lowercase + string.digits]
+def create_indirection_table(include_digits=True, include_uppercase=False):
+    digits = string.digits if include_digits else ""
+    uppercase = string.ascii_uppercase if include_uppercase else ""
+    data = [i for i in " " + string.ascii_lowercase + uppercase + digits]
     return {j: i for i, j in enumerate(data)}
 
 
@@ -58,13 +61,13 @@ def print_stats(_stats):
 
 def get_plausibility(_input_string, probability_table, _bigrams):
     # I expect cleaned string as input i.e every char in _input_string should be in _bigrams
-    proba = 0
+    probability = 0
     input_size = len(_input_string)
     for i in range(input_size - 1):
         x = _bigrams[_input_string[i]]
         y = _bigrams[_input_string[i + 1]]
-        proba += probability_table[x][y]
-    return proba / input_size
+        probability += probability_table[x][y]
+    return probability / input_size
 
 
 def _sort_dict(input_dict):
@@ -82,14 +85,16 @@ def make_first_proposition(crypt_phrase, global_stats, _char_to_num):
 
 
 if __name__ == '__main__':
+    # Creating stats on input text
     input_file = "MiserablesV1.txt"
     # input_file = "Swann.txt"
     chars = {}
-    char_to_num = create_indirection_table()
+    use_digits = False
+    char_to_num = create_indirection_table(include_digits=use_digits)
     stats = {i: 0 for i in char_to_num}
     size = len(char_to_num)
     bigrams = np.zeros((size, size))
-    for word in extract_words(os.path.join("data", input_file)):
+    for word in extract_words(os.path.join("data", input_file), include_digits=use_digits):
         compute_char_relation(word, bigrams, char_to_num)
         compute_stats(word, stats)
 
@@ -97,38 +102,55 @@ if __name__ == '__main__':
     # will be errors if no char are found in all text like "5" in original "Swann.txt"
     bigrams = bigrams / bigrams.sum(axis=1)[:, None]
 
-    save_table(bigrams, char_to_num, False)
+    # Producing graph
+    # save_table(bigrams, char_to_num, False)
 
-    coded_phrase = "w0uow0kfikfjkzgorftkfzu0inkfktfg0i0tkfsgtokxkfg0flutjfskskfjkfikfw0kfpkf1goyf1u0yfvgxrkx"
+    # Creating ciphered phrase
+    original_phrase = "quoique ce detail ne touche en aucune maniere au fond meme de ce que je vais vous parler"
+    original_phrase_size = len(original_phrase)
+    caesar_cipher = CaesarCipher(8, include_digits=use_digits)
+    coded_phrase = caesar_cipher.crypt(original_phrase)
+    input_probability = get_plausibility(original_phrase, bigrams, char_to_num)
+
     decrypt_guess = make_first_proposition(coded_phrase, stats, char_to_num)
-    best_decoded = "".join([decrypt_guess[i] for i in coded_phrase])
-    best_proba = get_plausibility(best_decoded, bigrams, char_to_num)
 
-    print(f"INPUT: {coded_phrase}\n{best_proba:.3f} {best_decoded}")
-    max_iter = 100000
+    best_decoded = "".join([decrypt_guess[i] for i in coded_phrase])
+    best_probability = get_plausibility(best_decoded, bigrams, char_to_num)
+
+    print(f"INPUT:\n{input_probability:.3f} {original_phrase}")
+    print(f"DECODED: {coded_phrase}")
+    print(f"{best_probability:.3f} {best_decoded}\n")
+
+    max_iter = 1000000
+    alpha = 2
 
     list_val = [i for i in char_to_num]
     count = 0
 
+    current_probability = 0
+
     while count < max_iter:
         # Switching decoding table
         guess_tmp = decrypt_guess
-        i = list_val[np.random.randint(0, size)]
-        j = list_val[np.random.randint(0, size)]
+        rand_i = list_val[np.random.randint(0, size)]
+        rand_j = list_val[np.random.randint(0, size)]
 
-        guess_tmp[i], guess_tmp[j] = guess_tmp[j], guess_tmp[i]
+        guess_tmp[rand_i], guess_tmp[rand_j] = guess_tmp[rand_j], guess_tmp[rand_i]
 
         decoded = "".join([guess_tmp[i] for i in coded_phrase])
-        proba = get_plausibility(decoded, bigrams, char_to_num)
+        tmp_probability = get_plausibility(decoded, bigrams, char_to_num)
 
-        rand_acceptation = np.random.rand() < 0.05
+        # Test whether move should be accepted
+        x = np.random.rand()
+        p = alpha * (tmp_probability - current_probability) * original_phrase_size
 
-        if proba > best_proba or rand_acceptation:
-            if not rand_acceptation:
-                best_proba = proba
+        if p > x:
+            decrypt_guess = guess_tmp.copy()
+            current_probability = tmp_probability
+            if tmp_probability > best_probability:
+                best_probability = tmp_probability
                 best_decoded = decoded
-                print(f"{proba:.3f} {decoded} {count}")
-            decrypt_guess = guess_tmp
+                print(f"{tmp_probability:.3f} {decoded} {count}")
         count += 1
 
-    print(f"\n{best_proba:.3f} {best_decoded}")
+    print(f"\n{best_probability:.3f} {best_decoded}")
