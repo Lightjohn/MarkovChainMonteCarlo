@@ -1,6 +1,7 @@
 import os
 import string
 
+import jellyfish
 import matplotlib.pyplot as plt
 import numpy as np
 from numpy import exp, log
@@ -71,6 +72,26 @@ def get_plausibility(_input_string, probability_table, _bigrams):
     return probability / input_size
 
 
+def get_min_hamming_distance(_input_word, _dictionary):
+    min_hamming = 999
+    for w in _dictionary:
+        hamming_distance = jellyfish.hamming_distance(_input_word, w)
+        if hamming_distance < min_hamming:
+            min_hamming = hamming_distance
+    return min_hamming
+
+
+def get_dict_plausibility(_input_string, _dictionary):
+    score = 0
+    all_words = list(filter(None, _input_string.split(" ")))
+    for _word in all_words:
+        w_len = len(_word)
+        w_score = get_min_hamming_distance(_word, _dictionary)
+        # score is between 1 (no difference) and 0 (all different)
+        score += max((w_len - w_score) / w_len, 0)
+    return score / len(all_words)
+
+
 def _sort_dict(input_dict):
     return sorted(input_dict, key=input_dict.get, reverse=True)
 
@@ -98,13 +119,14 @@ if __name__ == '__main__':
     # Creating stats on input text
     # input_file = "MiserablesV1.txt"
     input_file = "Swann.txt"
+    input_file_path = os.path.join("data", input_file)
     chars = {}
     use_digits = False
     char_to_num = create_indirection_table(include_digits=use_digits)
     stats = {i: 0 for i in char_to_num}
     size_solution = len(char_to_num)
     bigrams = np.zeros((size_solution, size_solution))
-    for word in extract_words(os.path.join("data", input_file), include_digits=use_digits):
+    for word in extract_words(input_file_path, include_digits=use_digits):
         compute_char_relation(word, bigrams, char_to_num)
         compute_stats(word, stats)
 
@@ -118,6 +140,7 @@ if __name__ == '__main__':
 
     # Creating ciphered phrase
     original_phrase = "quoique ce detail ne touche en aucune maniere au fond meme de ce que je vais vous parler"
+    original_phrase = "moi je ne crois pas qu il y ait de bonne ou de mauvaise situation"
     original_phrase_size = len(original_phrase)
     caesar_cipher = CaesarCipher(8, include_digits=use_digits)
     coded_phrase = caesar_cipher.crypt(original_phrase)
@@ -125,6 +148,7 @@ if __name__ == '__main__':
 
     current_guess = make_first_proposition(coded_phrase, stats, char_to_num)
 
+    best_guess = current_guess
     best_decoded = "".join([current_guess[i] for i in coded_phrase])
     best_probability = get_plausibility(best_decoded, bigrams, char_to_num)
 
@@ -140,6 +164,7 @@ if __name__ == '__main__':
 
     current_probability = best_probability
 
+    print(f"PHASE 1: Using char probability")
     while count < max_iter:
         # Switching decoding table
         guess_tmp = apply_permutation(current_guess, size_solution)
@@ -155,6 +180,7 @@ if __name__ == '__main__':
             current_guess = guess_tmp.copy()
             current_probability = tmp_probability
             if tmp_probability > best_probability:
+                best_guess = current_guess
                 best_probability = tmp_probability
                 best_decoded = decoded
                 print(f"{tmp_probability:.3f} {decoded} {count}")
@@ -162,3 +188,46 @@ if __name__ == '__main__':
 
     print(f"\nORIG: {original_phrase}")
     print(f"{best_probability:.3f} {best_decoded}")
+
+    print(f"PHASE 2: Dictionary time")
+    dictionary = set(extract_words(input_file_path, include_digits=use_digits))
+
+    max_iter = 2000
+    temperature = 0.05
+    rho = 0.999
+    count = 0
+    GAMMA = 1
+    # Starting from best
+    current_guess = best_guess
+    word_score = get_dict_plausibility(best_decoded, dictionary)
+    cur_score = GAMMA * best_probability + word_score
+
+    while count < max_iter:
+        guess_tmp = apply_permutation(current_guess, size_solution)
+        decoded = "".join([guess_tmp[i] for i in coded_phrase])
+        # this compute the mean of incorrect char per words in the phrase
+
+        # dict plausibility is between 0 and 1
+        tmp_probability = get_dict_plausibility(decoded, dictionary)
+        tmp_word_score = get_plausibility(decoded, bigrams, char_to_num)
+        tmp_score = GAMMA * tmp_probability + tmp_word_score
+
+        # Test whether move should be accepted
+        x = np.random.rand()
+        p = np.exp((tmp_score - cur_score) / temperature)
+        temperature = temperature * rho
+
+        if p > x:
+            current_guess = guess_tmp.copy()
+            current_probability = tmp_probability
+            if tmp_probability > best_probability:
+                best_guess = current_guess
+                best_probability = tmp_probability
+                best_decoded = decoded
+                print(f"{tmp_probability:.3f} {decoded} {count}")
+        count += 1
+
+    # https://en.wikipedia.org/wiki/String_metric
+    # Now apply jellyfish.hamming_distance(a,b) en replace words with distance one
+    # create dictionary from input
+    # check every words and for distance of 1 identify error, apply fix and rerun
